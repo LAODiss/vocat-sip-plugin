@@ -113,20 +113,20 @@ jobs:
           # Copy frontend assets
           cp -r assets/* dist/${{ env.PLUGIN_ID }}/
           
-          # Create zip
-          cd dist
-          zip -r ${{ env.PLUGIN_ID }}-${{ matrix.arch }}.zip ${{ env.PLUGIN_ID }}/
+          # Create zip - files at root of zip (no top-level folder)
+          cd dist/${{ env.PLUGIN_ID }}
+          zip -r ../../${{ env.PLUGIN_ID }}-${{ matrix.arch }}.zip .
           
           # Also copy binary for direct download
-          cp ${{ env.PLUGIN_ID }}/backend/vocat-sip-backend ${{ env.PLUGIN_ID }}-backend-${{ matrix.arch }}
+          cp backend/vocat-sip-backend ../../${{ env.PLUGIN_ID }}-backend-${{ matrix.arch }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.PLUGIN_ID }}-${{ matrix.arch }}
           path: |
-            dist/${{ env.PLUGIN_ID }}-${{ matrix.arch }}.zip
-            dist/${{ env.PLUGIN_ID }}-backend-${{ matrix.arch }}
+            ${{ env.PLUGIN_ID }}-${{ matrix.arch }}.zip
+            ${{ env.PLUGIN_ID }}-backend-${{ matrix.arch }}
           retention-days: 30
 
   release:
