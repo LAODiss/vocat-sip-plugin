@@ -21,8 +21,40 @@ env:
   NODE_VERSION: '24'
 
 jobs:
+  frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+          always-auth: false
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only
+          fi
+          npm ci
+          npm run build
+
+      - name: Upload frontend assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-assets
+          path: assets/
+          retention-days: 30
+
   build:
-    name: Build (${{ matrix.os }}/${{ matrix.arch }})
+    name: Build Backend (${{ matrix.os }}/${{ matrix.arch }})
+    needs: frontend
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -49,43 +81,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-          always-auth: false
-
-      - name: Build frontend (amd64 only)
-        if: matrix.arch == 'amd64'
-        working-directory: frontend
-        run: |
-          if [ ! -f package-lock.json ]; then
-            npm install --package-lock-only
-          fi
-          npm ci
-          npm run build
-
-      - name: Upload frontend assets
-        if: matrix.arch == 'amd64'
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-assets
-          path: assets/
-          retention-days: 30
-
       - name: Download frontend assets
-        if: matrix.arch != 'amd64'
         uses: actions/download-artifact@v4
         with:
           name: frontend-assets
           path: assets/
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Build backend
         working-directory: backend
@@ -164,7 +169,7 @@ jobs:
 
   docker:
     name: Docker Multi-arch
-    needs: build
+    needs: frontend
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     steps:
