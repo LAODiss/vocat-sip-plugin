@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "vocat-sip",
+  "name": "VoCat SIP Server",
+  "version": "1.0.0",
+  "description": "SIP/PBX server for VoCat - enables SIP clients (Zoiper, Groundwire) to make/receive calls and SMS via cellular modem",
+  "author": "VoCat Team",
+  "homepage": "https://github.com/MengMengCode/VoCat",
+  "permissions": ["device:control", "sms:send", "call:manage", "network:access"],
+  "contributions": [
+    {
+      "id": "dashboard",
+      "label": "SIP Dashboard",
+      "label_zh": "SIP 仪表盘",
+      "location": "sidebar",
+      "after": "devices",
+      "entry": "index.html"
+    },
+    {
+      "id": "accounts",
+      "label": "SIP Accounts",
+      "label_zh": "SIP 账号",
+      "location": "sidebar",
+      "after": "dashboard",
+      "entry": "accounts.html"
+    },
+    {
+      "id": "call-log",
+      "label": "Call Log",
+      "label_zh": "通话记录",
+      "location": "sidebar",
+      "after": "accounts",
+      "entry": "call-log.html"
+    },
+    {
+      "id": "settings",
+      "label": "SIP Settings",
+      "label_zh": "SIP 设置",
+      "location": "sidebar",
+      "after": "call-log",
+      "entry": "settings.html"
+    }
+  ],
+  "backend": {
+    "commands": {
+      "linux/amd64": "backend/vocat-sip-backend",
+      "linux/arm64": "backend/vocat-sip-backend",
+      "linux/386": "backend/vocat-sip-backend",
+      "linux/aarch64": "backend/vocat-sip-backend",
+      "linux/armv7": "backend/vocat-sip-backend"
+    }
+  }
+}
