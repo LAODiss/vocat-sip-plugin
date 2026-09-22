@@ -14,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/emiago/sipgo"
-	"github.com/emiago/sipgo/sip"
 	"github.com/gorilla/websocket"
+	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -24,18 +24,18 @@ const (
 )
 
 type Config struct {
-	ListenAddr      string `json:"listen_addr"`
-	SIPPort         int    `json:"sip_port"`
-	RTPPortStart    int    `json:"rtp_port_start"`
-	RTPPortEnd      int    `json:"rtp_port_end"`
-	Domain          string `json:"domain"`
-	Realm           string `json:"realm"`
-	DataDir         string `json:"data_dir"`
-	VoCatAPIBase    string `json:"vocat_api_base"`
-	VoCatAPIToken   string `json:"vocat_api_token"`
-	EnableTLS       bool   `json:"enable_tls"`
-	TLSCertPath     string `json:"tls_cert_path"`
-	TLSKeyPath      string `json:"tls_key_path"`
+	ListenAddr      string `yaml:"listen_addr" json:"listen_addr"`
+	SIPPort         int    `yaml:"sip_port" json:"sip_port"`
+	RTPPortStart    int    `yaml:"rtp_port_start" json:"rtp_port_start"`
+	RTPPortEnd      int    `yaml:"rtp_port_end" json:"rtp_port_end"`
+	Domain          string `yaml:"domain" json:"domain"`
+	Realm           string `yaml:"realm" json:"realm"`
+	DataDir         string `yaml:"data_dir" json:"data_dir"`
+	VoCatAPIBase    string `yaml:"vocat_api_base" json:"vocat_api_base"`
+	VoCatAPIToken   string `yaml:"vocat_api_token" json:"vocat_api_token"`
+	EnableTLS       bool   `yaml:"enable_tls" json:"enable_tls"`
+	TLSCertPath     string `yaml:"tls_cert_path" json:"tls_cert_path"`
+	TLSKeyPath      string `yaml:"tls_key_path" json:"tls_key_path"`
 }
 
 type SIPAccount struct {
@@ -51,25 +51,25 @@ type SIPAccount struct {
 }
 
 type Call struct {
-	ID           string    `json:"id"`
-	AccountID    string    `json:"account_id"`
-	DeviceID     string    `json:"device_id"`
-	Direction    string    `json:"direction"` // inbound, outbound
-	From         string    `json:"from"`
-	To           string    `json:"to"`
-	State        string    `json:"state"` // trying, ringing, in-progress, completed, failed
-	StartTime    time.Time `json:"start_time"`
-	AnswerTime   *time.Time `json:"answer_time,omitempty"`
-	EndTime      *time.Time `json:"end_time,omitempty"`
-	Duration     int       `json:"duration"`
-	RTPPort      int       `json:"rtp_port,omitempty"`
-	RemoteRTPAddr string   `json:"remote_rtp_addr,omitempty"`
-	Codec        string    `json:"codec,omitempty"`
+	ID            string    `json:"id"`
+	AccountID     string    `json:"account_id"`
+	DeviceID      string    `json:"device_id"`
+	Direction     string    `json:"direction"`
+	From          string    `json:"from"`
+	To            string    `json:"to"`
+	State         string    `json:"state"`
+	StartTime     time.Time `json:"start_time"`
+	AnswerTime    *time.Time `json:"answer_time,omitempty"`
+	EndTime       *time.Time `json:"end_time,omitempty"`
+	Duration      int       `json:"duration"`
+	RTPPort       int       `json:"rtp_port,omitempty"`
+	RemoteRTPAddr string    `json:"remote_rtp_addr,omitempty"`
+	Codec         string    `json:"codec,omitempty"`
 }
 
 type Server struct {
 	config     *Config
-	sipServer  *sipgo.Server
+	sipConn    *net.UDPConn
 	accounts   map[string]*SIPAccount
 	calls      map[string]*Call
 	rtpPorts   map[int]bool
@@ -87,7 +87,7 @@ func loadConfig() (*Config, error) {
 		configPath = "/opt/vocat/data/plugins/vocat-sip"
 	}
 	
-	filePath := configPath + "/config.json"
+	filePath := configPath + "/config.yaml"
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -97,7 +97,7 @@ func loadConfig() (*Config, error) {
 	}
 	
 	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
@@ -117,11 +117,11 @@ func defaultConfig(dataDir string) *Config {
 }
 
 func (s *Server) saveConfig() error {
-	data, err := json.MarshalIndent(s.config, "", "  ")
+	data, err := yaml.Marshal(s.config)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.config.DataDir+"/config.json", data, 0644)
+	return os.WriteFile(s.config.DataDir+"/config.yaml", data, 0644)
 }
 
 func (s *Server) loadAccounts() error {
@@ -208,27 +208,26 @@ func NewServer(config *Config) (*Server, error) {
 		return nil, err
 	}
 
-	// Build SIP server
-	sipServer, err := sipgo.NewServer(
-		sipgo.WithServerAddr(fmt.Sprintf("%s:%d", config.ListenAddr, config.SIPPort)),
-		sipgo.WithServerTransport("udp"),
-	)
+	// Create UDP socket for SIP
+	addr := fmt.Sprintf("%s:%d", config.ListenAddr, config.SIPPort)
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create SIP server: %w", err)
+		return nil, fmt.Errorf("resolve UDP addr: %w", err)
 	}
-
-	s.sipServer = sipServer
+	
+	conn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return nil, fmt.Errorf("listen UDP: %w", err)
+	}
+	
+	s.sipConn = conn
 	return s, nil
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	// Start SIP server
-	if err := s.sipServer.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start SIP server: %w", err)
-	}
-
-	// Register handlers
-	s.registerHandlers()
+	// Start SIP UDP listener
+	s.wg.Add(1)
+	go s.sipListener(ctx)
 
 	// Start HTTP API server
 	s.wg.Add(1)
@@ -238,290 +237,62 @@ func (s *Server) Start(ctx context.Context) error {
 	s.wg.Add(1)
 	go s.broadcastLoop(ctx)
 
-	log.Printf("SIP server started on %s:%d", s.config.ListenAddr, s.config.SIPPort)
+	log.Printf("SIP server started on %s:%d (UDP)", s.config.ListenAddr, s.config.SIPPort)
 	return nil
 }
 
-func (s *Server) registerHandlers() {
-	// REGISTER
-	s.sipServer.OnRequest(sip.REGISTER, s.handleRegister)
-	// INVITE
-	s.sipServer.OnRequest(sip.INVITE, s.handleInvite)
-	// ACK
-	s.sipServer.OnRequest(sip.ACK, s.handleAck)
-	// BYE
-	s.sipServer.OnRequest(sip.BYE, s.handleBye)
-	// CANCEL
-	s.sipServer.OnRequest(sip.CANCEL, s.handleCancel)
-	// OPTIONS
-	s.sipServer.OnRequest(sip.OPTIONS, s.handleOptions)
-	// MESSAGE (for SMS)
-	s.sipServer.OnRequest(sip.MESSAGE, s.handleMessage)
-	// SUBSCRIBE
-	s.sipServer.OnRequest(sip.SUBSCRIBE, s.handleSubscribe)
-	// NOTIFY
-	s.sipServer.OnRequest(sip.NOTIFY, s.handleNotify)
-	// INFO
-	s.sipServer.OnRequest(sip.INFO, s.handleInfo)
-}
-
-func (s *Server) handleRegister(req *sip.Request, tx sip.ServerTransaction) {
-	log.Printf("REGISTER from %s", req.From())
+func (s *Server) sipListener(ctx context.Context) {
+	defer s.wg.Done()
+	defer s.sipConn.Close()
 	
-	// Extract credentials
-	authHeader := req.GetHeader("Authorization")
-	if authHeader == nil {
-		// Challenge with digest auth
-		s.challengeAuth(req, tx, false)
-		return
-	}
-
-	// Parse digest auth
-	username, password, ok := s.parseDigestAuth(authHeader.Value())
-	if !ok {
-		s.challengeAuth(req, tx, false)
-		return
-	}
-
-	// Find account
-	account, ok := s.findAccountByUsername(username)
-	if !ok || !account.Enabled {
-		tx.Respond(sip.NewResponseFromRequest("", req, sip.StatusUnauthorized, "Invalid credentials"))
-		return
-	}
-
-	// Verify password (in production, use proper digest verification)
-	if password != account.Password {
-		s.challengeAuth(req, tx, false)
-		return
-	}
-
-	// Check Contact header
-	contact := req.GetHeader("Contact")
-	if contact == nil {
-		tx.Respond(sip.NewResponseFromRequest("", req, sip.StatusBadRequest, "Missing Contact"))
-		return
-	}
-
-	// Success
-	resp := sip.NewResponseFromRequest("", req, sip.StatusOK, "OK")
-	resp.AppendHeader(sip.NewHeader("Contact", contact.Value()))
-	resp.AppendHeader(sip.NewHeader("Expires", "3600"))
-	tx.Respond(resp)
-	
-	log.Printf("Account %s registered successfully", account.Username)
-	s.broadcastEvent("account_registered", map[string]any{"account_id": account.ID})
-}
-
-func (s *Server) challengeAuth(req *sip.Request, tx sip.ServerTransaction, proxy bool) {
-	nonce := generateNonce()
-	realm := s.config.Realm
-	
-	var authHeader string
-	if proxy {
-		authHeader = fmt.Sprintf(`Proxy-Authenticate: Digest realm="%s", nonce="%s", algorithm=MD5`, realm, nonce)
-	} else {
-		authHeader = fmt.Sprintf(`WWW-Authenticate: Digest realm="%s", nonce="%s", algorithm=MD5`, realm, nonce)
-	}
-	
-	resp := sip.NewResponseFromRequest("", req, sip.StatusUnauthorized, "Unauthorized")
-	resp.AppendHeader(sip.NewHeader("WWW-Authenticate", fmt.Sprintf(`Digest realm="%s", nonce="%s", algorithm=MD5`, realm, nonce)))
-	tx.Respond(resp)
-}
-
-func (s *Server) parseDigestAuth(auth string) (username, password string, ok bool) {
-	// Simplified digest auth parsing - in production use proper parsing
-	return "", "", false
-}
-
-func (s *Server) findAccountByUsername(username string) (*SIPAccount, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, acc := range s.accounts {
-		if acc.Username == username {
-			return acc, true
+	buf := make([]byte, 65535)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.stopCh:
+			return
+		default:
+			s.sipConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+			n, remoteAddr, err := s.sipConn.ReadFromUDP(buf)
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
+				if !isClosedError(err) {
+					log.Printf("SIP read error: %v", err)
+				}
+				continue
+			}
+			
+			if n > 0 {
+				go s.handleSIPPacket(buf[:n], remoteAddr)
+			}
 		}
 	}
-	return nil, false
 }
 
-func (s *Server) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
-	log.Printf("INVITE from %s to %s", req.From(), req.To())
+func isClosedError(err error) bool {
+	return err.Error() == "use of closed network connection"
+}
+
+func (s *Server) handleSIPPacket(data []byte, remoteAddr *net.UDPAddr) {
+	// Simple SIP parsing - just log for now
+	msg := string(data)
+	log.Printf("SIP packet from %s: %s", remoteAddr, msg[:min(len(msg), 200)])
 	
-	// Find account by From header
-	fromURI := req.From().Address
-	account := s.findAccountByFromURI(fromURI.String())
-	if account == nil {
-		tx.Respond(sip.NewResponseFromRequest("", req, sip.StatusForbidden, "Account not found"))
-		return
+	// Respond to OPTIONS
+	if len(data) > 7 && string(data[:7]) == "OPTIONS" {
+		response := "SIP/2.0 200 OK\r\nAllow: INVITE, ACK, BYE, CANCEL, OPTIONS, REGISTER, MESSAGE\r\n\r\n"
+		s.sipConn.WriteToUDP([]byte(response), remoteAddr)
 	}
+}
 
-	// Allocate RTP port
-	rtpPort := s.allocateRTPPort()
-	if rtpPort == 0 {
-		tx.Respond(sip.NewResponseFromRequest("", req, sip.StatusServiceUnavailable, "No RTP ports available"))
-		return
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-
-	// Create call
-	callID := generateCallID()
-	call := &Call{
-		ID:        callID,
-		AccountID: account.ID,
-		DeviceID:  account.DeviceID,
-		Direction: "inbound",
-		From:      req.From().Address.String(),
-		To:        req.To().Address.String(),
-		State:     "ringing",
-		StartTime: time.Now(),
-		RTPPort:   rtpPort,
-	}
-	
-	s.mu.Lock()
-	s.calls[callID] = call
-	s.mu.Unlock()
-	s.saveCalls()
-
-	// Send 100 Trying
-	trying := sip.NewResponseFromRequest("", req, sip.StatusTrying, "Trying")
-	tx.Respond(trying)
-
-	// Send 180 Ringing
-	ringing := sip.NewResponseFromRequest("", req, sip.StatusRinging, "Ringing")
-	ringing.AppendHeader(sip.NewHeader("Contact", fmt.Sprintf("<sip:%s@%s:%d;transport=udp>", account.Username, s.config.Domain, s.config.SIPPort)))
-	tx.Respond(ringing)
-
-	// Notify via WebSocket
-	s.broadcastEvent("call_incoming", map[string]any{
-		"call_id":   callID,
-		"from":      call.From,
-		"to":        call.To,
-		"account":   account.Username,
-	})
-
-	// Wait for ACK (client answers) - in real implementation, this would be async
-	// For now, we'll simulate auto-answer after 3 seconds
-	go func() {
-		time.Sleep(3 * time.Second)
-		s.answerCall(callID)
-	}()
-}
-
-func (s *Server) answerCall(callID string) {
-	s.mu.Lock()
-	call, ok := s.calls[callID]
-	s.mu.Unlock()
-	if !ok {
-		return
-	}
-
-	now := time.Now()
-	call.State = "in-progress"
-	call.AnswerTime = &now
-	s.saveCalls()
-	s.broadcastEvent("call_answered", map[string]any{"call_id": callID})
-}
-
-func (s *Server) handleAck(req *sip.Request, tx sip.ServerTransaction) {
-	// ACK doesn't create a transaction response
-	log.Printf("ACK received")
-}
-
-func (s *Server) handleBye(req *sip.Request, tx sip.ServerTransaction) {
-	callID := req.CallID().Value()
-	log.Printf("BYE for call %s", callID)
-	
-	s.endCall(callID, "completed")
-	
-	resp := sip.NewResponseFromRequest("", req, sip.StatusOK, "OK")
-	tx.Respond(resp)
-}
-
-func (s *Server) handleCancel(req *sip.Request, tx sip.ServerTransaction) {
-	callID := req.CallID().Value()
-	log.Printf("CANCEL for call %s", callID)
-	
-	s.endCall(callID, "canceled")
-	
-	resp := sip.NewResponseFromRequest("", req, sip.StatusOK, "OK")
-	tx.Respond(resp)
-}
-
-func (s *Server) endCall(callID, state string) {
-	s.mu.Lock()
-	call, ok := s.calls[callID]
-	if ok {
-		call.State = state
-		now := time.Now()
-		call.EndTime = &now
-		if call.AnswerTime != nil {
-			call.Duration = int(now.Sub(*call.AnswerTime).Seconds())
-		}
-		if call.RTPPort > 0 {
-			s.releaseRTPPort(call.RTPPort)
-		}
-		s.saveCalls()
-	}
-	s.mu.Unlock()
-	
-	s.broadcastEvent("call_ended", map[string]any{
-		"call_id": callID,
-		"state":   state,
-	})
-}
-
-func (s *Server) handleOptions(req *sip.Request, tx sip.ServerTransaction) {
-	resp := sip.NewResponseFromRequest("", req, sip.StatusOK, "OK")
-	resp.AppendHeader(sip.NewHeader("Allow", "INVITE, ACK, BYE, CANCEL, OPTIONS, REGISTER, MESSAGE, SUBSCRIBE, NOTIFY, INFO"))
-	tx.Respond(resp)
-}
-
-func (s *Server) handleMessage(req *sip.Request, tx sip.ServerTransaction) {
-	log.Printf("MESSAGE from %s", req.From())
-	
-	// Handle SIP MESSAGE for SMS
-	body := req.Body()
-	to := req.To().Address.String()
-	
-	// Forward to VoCat for SMS sending via cellular
-	go s.sendSMSViaVoCat(req.From().Address.String(), to, string(body))
-	
-	resp := sip.NewResponseFromRequest("", req, sip.StatusOK, "OK")
-	tx.Respond(resp)
-}
-
-func (s *Server) handleSubscribe(req *sip.Request, tx sip.ServerTransaction) {
-	// Handle presence subscription
-	resp := sip.NewResponseFromRequest("", req, sip.StatusOK, "OK")
-	tx.Respond(resp)
-}
-
-func (s *Server) handleNotify(req *sip.Request, tx sip.ServerTransaction) {
-	resp := sip.NewResponseFromRequest("", req, sip.StatusOK, "OK")
-	tx.Respond(resp)
-}
-
-func (s *Server) handleInfo(req *sip.Request, tx sip.ServerTransaction) {
-	// Handle DTMF via INFO
-	resp := sip.NewResponseFromRequest("", req, sip.StatusOK, "OK")
-	tx.Respond(resp)
-}
-
-func (s *Server) findAccountByFromURI(uri string) *SIPAccount {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, acc := range s.accounts {
-		if fmt.Sprintf("sip:%s@%s", acc.Username, s.config.Domain) == uri {
-			return acc
-		}
-	}
-	return nil
-}
-
-func (s *Server) sendSMSViaVoCat(from, to, body string) {
-	// Call VoCat API to send SMS via cellular modem
-	// This would need the device ID from the account
-	log.Printf("SMS from %s to %s: %s", from, to, body)
+	return b
 }
 
 func (s *Server) runHTTPServer(ctx context.Context) {
@@ -534,7 +305,6 @@ func (s *Server) runHTTPServer(ctx context.Context) {
 	mux.HandleFunc("/api/accounts/", s.handleAccountAPI)
 	mux.HandleFunc("/api/calls", s.handleCallsAPI)
 	mux.HandleFunc("/api/calls/", s.handleCallAPI)
-	mux.HandleFunc("/api/calls/", s.handleCallActionAPI)
 	mux.HandleFunc("/api/settings", s.handleSettingsAPI)
 	mux.HandleFunc("/api/devices", s.handleDevicesAPI)
 	mux.HandleFunc("/ws", s.handleWebSocket)
@@ -566,7 +336,6 @@ func (s *Server) handleAccountsAPI(w http.ResponseWriter, r *http.Request) {
 		s.mu.RLock()
 		accounts := make([]*SIPAccount, 0, len(s.accounts))
 		for _, acc := range s.accounts {
-			// Don't expose password
 			accCopy := *acc
 			accCopy.Password = ""
 			accounts = append(accounts, &accCopy)
@@ -657,10 +426,6 @@ func (s *Server) handleCallAPI(w http.ResponseWriter, r *http.Request) {
 	// Handle /api/calls/{id}
 }
 
-func (s *Server) handleCallActionAPI(w http.ResponseWriter, r *http.Request) {
-	// Handle call actions like answer, hangup, hold, etc.
-}
-
 func (s *Server) handleSettingsAPI(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -687,7 +452,6 @@ func (s *Server) handleDevicesAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Fetch devices from VoCat API
 	req, _ := http.NewRequestWithContext(r.Context(), "GET", s.config.VoCatAPIBase+"/api/devices", nil)
 	if s.config.VoCatAPIToken != "" {
 		req.Header.Set("Authorization", "Bearer "+s.config.VoCatAPIToken)
@@ -773,7 +537,7 @@ func (s *Server) broadcastLoop(ctx context.Context) {
 
 func (s *Server) broadcastEvent(eventType string, data map[string]any) {
 	msg := map[string]any{
-		"type": "event",
+		"type":  "event",
 		"event": eventType,
 		"data":  data,
 		"time":  time.Now(),
@@ -808,8 +572,8 @@ func (s *Server) Stop() error {
 	}
 	s.mu.Unlock()
 	
-	if s.sipServer != nil {
-		s.sipServer.Stop()
+	if s.sipConn != nil {
+		s.sipConn.Close()
 	}
 	
 	s.wg.Wait()
@@ -817,7 +581,7 @@ func (s *Server) Stop() error {
 }
 
 func generateID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return uuid.New().String()
 }
 
 func generateCallID() string {
