@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/plugin-assets/vocat-sip/',
+  base: '/plugin-assets/vocat-sipserver/',
   build: {
     outDir: '../assets',
     emptyOutDir: true,

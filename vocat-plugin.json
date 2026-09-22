@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "vocat-sip",
+  "id": "vocat-sipserver",
   "name": "VoCat SIP Server",
   "version": "1.0.0",
   "description": "SIP/PBX server for VoCat - enables SIP clients (Zoiper, Groundwire) to make/receive calls and SMS via cellular modem",
@@ -43,11 +43,11 @@
   ],
   "backend": {
     "commands": {
-      "linux/amd64": "backend/vocat-sip-backend",
-      "linux/arm64": "backend/vocat-sip-backend",
-      "linux/386": "backend/vocat-sip-backend",
-      "linux/aarch64": "backend/vocat-sip-backend",
-      "linux/armv7": "backend/vocat-sip-backend"
+      "linux/amd64": "backend/vocat-sipserver-backend",
+      "linux/arm64": "backend/vocat-sipserver-backend",
+      "linux/386": "backend/vocat-sipserver-backend",
+      "linux/aarch64": "backend/vocat-sipserver-backend",
+      "linux/armv7": "backend/vocat-sipserver-backend"
     }
   }
 }

@@ -1,4 +1,4 @@
-# VoCat SIP Plugin
+# VoCat SIP Server Plugin
 
 一个为 VoCat 提供 SIP/PBX 功能的插件，使 Zoiper、Groundwire 等 SIP 客户端能够通过蜂窝调制解调器拨打/接收电话和收发短信。
 
@@ -27,7 +27,7 @@
                     Plugin API (HTTP + WebSocket)
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    vocat-sip Plugin                          │
+│                  vocat-plugin-sipserver                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
 │  │  SIP Server  │  │  HTTP API    │  │  WebSocket   │       │
 │  │  (UDP/TCP)   │◄─┤  (REST)      │◄─┤  (Events)    │       │
@@ -55,7 +55,7 @@
 
 ### 方式一：从预构建包安装（推荐）
 
-1. 下载最新的 `vocat-sip-plugin.zip` 从 [Releases](https://github.com/your-repo/vocat-sip-plugin/releases)
+1. 下载最新的 `vocat-plugin-sipserver.zip` 从 [Releases](https://github.com/LAODiss/vocat-plugin-sipserver/releases)
 2. 在 VoCat Web UI 中进入 `扩展` 页面
 3. 点击 `上传插件` 选择 zip 文件
 4. 启用插件
@@ -64,13 +64,13 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-repo/vocat-sip-plugin
-cd vocat-sip-plugin
+git clone https://github.com/LAODiss/vocat-plugin-sipserver
+cd vocat-plugin-sipserver
 
 # 构建
 ./build.sh
 
-# 生成的包在 dist/vocat-sip-plugin.zip
+# 生成的包在 dist/vocat-plugin-sipserver.zip
 ```
 
 ## 配置
@@ -173,7 +173,7 @@ STUN 服务器: stun.l.google.com:19302
 ### 项目结构
 
 ```
-vocat-sip-plugin/
+vocat-plugin-sipserver/
 ├── vocat-plugin.json        # 插件清单
 ├── backend/                 # Go 后端
 │   ├── main.go             # 入口点
@@ -209,7 +209,7 @@ npm run dev
 
 插件使用 VoCat 的扩展系统：
 - 后端作为独立进程运行，通过 `VOCAT_PLUGIN_LISTEN` 环境变量获取监听地址
-- 前端资源通过 `/plugin-assets/vocat-sip/...` 提供
+- 前端资源通过 `/plugin-assets/vocat-sipserver/...` 提供
 - 通过 WebSocket 推送实时事件到前端
 
 ## 故障排查

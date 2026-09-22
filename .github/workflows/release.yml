@@ -16,7 +16,7 @@ permissions:
   packages: write
 
 env:
-  PLUGIN_ID: vocat-sip
+  PLUGIN_ID: vocat-sipserver
   GO_VERSION: '1.23'
   NODE_VERSION: '24'
 
@@ -63,20 +63,20 @@ jobs:
           - os: ubuntu-latest
             arch: amd64
             goarch: amd64
-            artifact: vocat-sip-backend-linux-amd64
+            artifact: vocat-sipserver-backend-linux-amd64
           - os: ubuntu-latest
             arch: arm64
             goarch: arm64
-            artifact: vocat-sip-backend-linux-arm64
+            artifact: vocat-sipserver-backend-linux-arm64
           - os: ubuntu-latest
             arch: '386'
             goarch: '386'
-            artifact: vocat-sip-backend-linux-386
+            artifact: vocat-sipserver-backend-linux-386
           - os: ubuntu-latest
             arch: armv7
             goarch: arm
             goarm: 7
-            artifact: vocat-sip-backend-linux-armv7
+            artifact: vocat-sipserver-backend-linux-armv7
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -108,7 +108,7 @@ jobs:
           
           # Copy backend binary
           mkdir -p dist/${{ env.PLUGIN_ID }}/backend
-          cp backend/${{ matrix.artifact }} dist/${{ env.PLUGIN_ID }}/backend/vocat-sip-backend
+          cp backend/${{ matrix.artifact }} dist/${{ env.PLUGIN_ID }}/backend/vocat-sipserver-backend
           
           # Copy frontend assets
           cp -r assets/* dist/${{ env.PLUGIN_ID }}/
@@ -118,7 +118,7 @@ jobs:
           zip -r ../../${{ env.PLUGIN_ID }}-${{ matrix.arch }}.zip .
           
           # Also copy binary for direct download
-          cp backend/vocat-sip-backend ../../${{ env.PLUGIN_ID }}-backend-${{ matrix.arch }}
+          cp backend/vocat-sipserver-backend ../../${{ env.PLUGIN_ID }}-backend-${{ matrix.arch }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -238,6 +238,6 @@ jobs:
           echo "\`\`\`"
           echo ""
           echo "### Installation"
-          echo "1. Download \`vocat-sip-plugin-<arch>.zip\` for your architecture"
+          echo "1. Download \`vocat-sipserver-<arch>.zip\` for your architecture"
           echo "2. In VoCat Web UI: Extensions → Upload Plugin"
           echo "3. Enable the plugin and configure SIP accounts"
